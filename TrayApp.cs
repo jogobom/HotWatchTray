@@ -1,7 +1,5 @@
 using LibreHardwareMonitor.Hardware;
-using System.Drawing;
 using System.Drawing.Text;
-using System.Linq;
 
 namespace HotWatchTray
 {
@@ -20,7 +18,7 @@ namespace HotWatchTray
                 Text = "Loading temperatures..."
             };
             var menu = new ContextMenuStrip();
-            var exitItem = new ToolStripMenuItem("Exit", null, (s, e) => Exit());
+            var exitItem = new ToolStripMenuItem("Exit", null, (_, _) => Exit());
             menu.Items.Add(exitItem);
             _trayIcon.ContextMenuStrip = menu;
 
@@ -36,65 +34,39 @@ namespace HotWatchTray
 
         private void UpdateTemps(object? state)
         {
-            var tooltip = GetTemperatures(out var cpu, out var gpu);
+            var (cpuTemp, gpuTemp) = GetTemperatures();
+            var tooltip = $"CPU: {cpuTemp}, GPU: {gpuTemp}";
             _trayIcon.Text = tooltip.Length > 63 ? tooltip.Substring(0, 63) : tooltip;
-            _trayIcon.Icon = CreateTempIcon(cpu, gpu);
+            _trayIcon.Icon = CreateTempIcon(cpuTemp, gpuTemp);
         }
 
-        private string GetTemperatures(out string cpu, out string gpu)
+        private (string cpuTemp, string GpuTemp) GetTemperatures()
         {
-            float? cpuValue = null;
-            float? gpuValue = null;
-            cpu = "--";
-            gpu = "--";
-            var cpuTemp = "CPU: N/A";
-            var gpuTemp = "GPU: N/A";
-            foreach (var hardware in _computer.Hardware)
-            {
-                hardware.Update();
-                switch (hardware)
-                {
-                    case { HardwareType: HardwareType.Cpu }:
-                    {
-                        var sensor = hardware.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature);
-                        if (sensor is { Value: not null })
-                        {
-                            cpuValue = sensor.Value.Value;
-                            cpu = ((int)cpuValue.Value).ToString();
-                            cpuTemp = $"CPU: {sensor.Value.Value:F1}°C";
-                        }
-                        break;
-                    }
-                    case { HardwareType: HardwareType.GpuNvidia }:
-                    case { HardwareType: HardwareType.GpuAmd }:
-                    {
-                        var sensor = hardware.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature);
-                        if (sensor is { Value: not null })
-                        {
-                            gpuValue = sensor.Value.Value;
-                            gpu = ((int)gpuValue.Value).ToString();
-                            gpuTemp = $"GPU: {sensor.Value.Value:F1}°C";
-                        }
-                        break;
-                    }
-                }
-            }
-            return $"{cpuTemp}, {gpuTemp}";
+            var firstCpu = _computer.Hardware.First(h => h.HardwareType == HardwareType.Cpu);
+            var firstGpu = _computer.Hardware.First(h => h.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd);
+
+            return (
+                GetHardwareTemperatureAsString(firstCpu, "CPU"),
+                GetHardwareTemperatureAsString(firstGpu, "GPU")
+                );
         }
 
-        private Icon CreateTempIcon(string cpu, string gpu)
+        private static string GetHardwareTemperatureAsString(IHardware hardware, string name)
         {
-            // 16x16 icon size for tray
-            using var bmp = new Bitmap(16, 16);
+            var sensor = hardware.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature);
+            return sensor is { Value: not null } ? $"{name}: {sensor.Value.Value:F1}°C" : "--";
+        }
+
+        private static Icon CreateTempIcon(string cpuTemperature, string gpuTemperature)
+        {
+            using var bmp = new Bitmap(24, 16);
             using var g = Graphics.FromImage(bmp);
-            // Set a dark grey background
             g.Clear(Color.FromArgb(255, 40, 40, 40));
             using var font = new Font("Tahoma", 8, FontStyle.Bold, GraphicsUnit.Pixel);
             var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
-            // Use bright colors for visibility on dark background
-            g.DrawString(cpu, font, Brushes.Orange, new RectangleF(0, 0, 16, 8), sf);
-            g.DrawString(gpu, font, Brushes.Cyan, new RectangleF(0, 8, 16, 8), sf);
+            g.DrawString(cpuTemperature, font, Brushes.Orange, new RectangleF(0, 0, 24, 8), sf);
+            g.DrawString(gpuTemperature, font, Brushes.Cyan, new RectangleF(0, 8, 24, 8), sf);
             var hIcon = bmp.GetHicon();
             return Icon.FromHandle(hIcon);
         }
