@@ -18,7 +18,7 @@ namespace HotWatchTray
                 Text = "Loading temperatures..."
             };
             var menu = new ContextMenuStrip();
-            var exitItem = new ToolStripMenuItem("Exit", null, (_, _) => Exit());
+            var exitItem = new ToolStripMenuItem("Exit", null, (s, e) => Exit());
             menu.Items.Add(exitItem);
             _trayIcon.ContextMenuStrip = menu;
 
@@ -34,30 +34,44 @@ namespace HotWatchTray
 
         private void UpdateTemps(object? state)
         {
-            var (cpuTemp, gpuTemp) = GetTemperatures();
-            var tooltip = $"CPU: {cpuTemp}, GPU: {gpuTemp}";
+            var (cpu, gpu) = GetTemperatures();
+            var tooltip = $"CPU: {cpu}°C, GPU: {gpu}°C";
             _trayIcon.Text = tooltip.Length > 63 ? tooltip.Substring(0, 63) : tooltip;
-            _trayIcon.Icon = CreateTempIcon(cpuTemp, gpuTemp);
+            _trayIcon.Icon = CreateTempIcon(cpu, gpu);
         }
 
-        private (string cpuTemp, string GpuTemp) GetTemperatures()
+        private (string cpu, string gpu) GetTemperatures()
         {
-            var firstCpu = _computer.Hardware.First(h => h.HardwareType == HardwareType.Cpu);
-            var firstGpu = _computer.Hardware.First(h => h.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd);
+            var cpu = "--";
+            var gpu = "--";
+            foreach (var hardware in _computer.Hardware)
+            {
+                hardware.Update();
+                switch (hardware)
+                {
+                    case { HardwareType: HardwareType.Cpu }:
+                    {
+                        cpu = GetStringFromTemperatureSensor(hardware.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature));
+                        break;
+                    }
+                    case { HardwareType: HardwareType.GpuNvidia }:
+                    case { HardwareType: HardwareType.GpuAmd }:
+                    {
+                        gpu = GetStringFromTemperatureSensor(hardware.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature));
+                        break;
+                    }
+                }
+            }
 
-            return (
-                GetHardwareTemperatureAsString(firstCpu, "CPU"),
-                GetHardwareTemperatureAsString(firstGpu, "GPU")
-                );
+            return (cpu, gpu);
         }
 
-        private static string GetHardwareTemperatureAsString(IHardware hardware, string name)
+        private static string GetStringFromTemperatureSensor(ISensor? sensor)
         {
-            var sensor = hardware.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature);
-            return sensor is { Value: not null } ? $"{name}: {sensor.Value.Value:F1}°C" : "--";
+            return sensor is { Value: not null } ? ((int)((float?)sensor.Value.Value).Value).ToString() : "--";
         }
 
-        private static Icon CreateTempIcon(string cpuTemperature, string gpuTemperature)
+        private static Icon CreateTempIcon(string cpu, string gpu)
         {
             using var bmp = new Bitmap(24, 16);
             using var g = Graphics.FromImage(bmp);
@@ -65,8 +79,8 @@ namespace HotWatchTray
             using var font = new Font("Tahoma", 8, FontStyle.Bold, GraphicsUnit.Pixel);
             var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
-            g.DrawString(cpuTemperature, font, Brushes.Orange, new RectangleF(0, 0, 24, 8), sf);
-            g.DrawString(gpuTemperature, font, Brushes.Cyan, new RectangleF(0, 8, 24, 8), sf);
+            g.DrawString(cpu, font, Brushes.Orange, new RectangleF(0, 0, 24, 8), sf);
+            g.DrawString(gpu, font, Brushes.Cyan, new RectangleF(0, 8, 24, 8), sf);
             var hIcon = bmp.GetHicon();
             return Icon.FromHandle(hIcon);
         }
